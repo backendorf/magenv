@@ -34,7 +34,7 @@ This practical guide will take you from zero to a functional Magento 2 store run
 
    # --- DATABASE ---
    MYSQL_ROOT_PASSWORD=root
-   MYSQL_DATABASE=mystore_db
+   MYSQL_DATABASE=${STORE_PREFIX}_db
    ```
    > [!TIP]
    > The `./install` script will automatically use the values you define here!
