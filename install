@@ -1,0 +1,147 @@
+#!/bin/bash
+set -eo pipefail
+
+# function to load and evaluate .env
+load_env() {
+    if [ -f .env ]; then
+        # We source it to get the variables, then we manually evaluate ones that might contain other variables
+        set -a
+        source .env
+        set +a
+        # Force evaluation of dynamic variables to ensure they are updated in the current shell
+        STORE_PREFIX=$(eval echo "$STORE_PREFIX")
+        MAGENTO_BASE_URL=$(eval echo "$MAGENTO_BASE_URL")
+        MYSQL_DATABASE=$(eval echo "$MYSQL_DATABASE")
+    else
+        echo "❌ .env file not found! Please create it before running install."
+        exit 1
+    fi
+}
+
+load_env
+
+# Override Store Prefix via prompt
+read -p "Enter Store Prefix [default: $STORE_PREFIX]: " INPUT_PREFIX
+if [ ! -z "$INPUT_PREFIX" ]; then
+    STORE_PREFIX=$INPUT_PREFIX
+    echo "📝 Updating .env with new STORE_PREFIX: $STORE_PREFIX"
+    sed -i "s/^STORE_PREFIX=.*/STORE_PREFIX=$STORE_PREFIX/" .env
+    
+    # Reload environment to reflect new prefix
+    load_env
+    
+    echo "🔄 Refreshing containers for new prefix..."
+    docker-compose up -d --remove-orphans
+fi
+
+echo "🚀 Initializing Magento environment in ${STORE_PREFIX}";
+
+# Ensure the user has write permissions to /var/www/html
+echo "🔐 Checking directory permissions...";
+docker-compose exec -T php sudo chown -R app:app /var/www/html
+
+# Check if Magento is already installed
+IS_INSTALLED=$(docker-compose exec -T php [ -f /var/www/html/app/etc/env.php ] && echo "yes" || echo "no" | tr -d '\r')
+
+if [ "$IS_INSTALLED" == "yes" ]; then
+    echo "⚠️  Magento is already installed in this environment!"
+    read -p "Do you want to reinstall it from scratch? (y/n): " REINSTALL
+    if [ "$REINSTALL" != "y" ]; then
+        echo "❌ Installation aborted."
+        exit 0
+    fi
+    echo "🧹 Clearing current installation for a fresh start..."
+    docker-compose exec -T php find /var/www/html -mindepth 1 -delete
+fi
+
+# Ask for version
+read -p "Enter Magento version (leave empty for latest): " VERSION
+
+# Ask for sample data
+read -p "Install sample data? (y/n) [default: n]: " INSTALL_SAMPLE_DATA
+INSTALL_SAMPLE_DATA=${INSTALL_SAMPLE_DATA:-n}
+
+# Check if directory is empty inside the container
+IS_EMPTY=$(docker-compose exec -T php ls -A /var/www/html | tr -d '\r')
+
+if [ ! -z "$IS_EMPTY" ]; then
+    # Check if it's a partial install (has composer.json but not bin/magento)
+    HAS_COMPOSER=$(docker-compose exec -T php [ -f /var/www/html/composer.json ] && echo "yes" || echo "no" | tr -d '\r')
+    HAS_BIN_MAGENTO=$(docker-compose exec -T php [ -f /var/www/html/bin/magento ] && echo "yes" || echo "no" | tr -d '\r')
+    
+    if [ "$HAS_COMPOSER" == "yes" ] && [ "$HAS_BIN_MAGENTO" == "no" ]; then
+        echo "⚠️  Found composer.json but bin/magento is missing. Completing installation..."
+        docker-compose exec php composer install
+    elif [ "$HAS_COMPOSER" == "no" ]; then
+        echo "⚠️  Directory /var/www/html is not empty and no composer.json found!"
+        read -p "Do you want to clear it and continue? (y/n): " CLEAR
+        if [ "$CLEAR" == "y" ]; then
+            echo "🧹 Clearing directory..."
+            docker-compose exec -T php find /var/www/html -mindepth 1 -delete
+        else
+            echo "❌ Installation aborted."
+            exit 1
+        fi
+    fi
+fi
+
+# Final check for download
+if ! docker-compose exec -T php [ -f /var/www/html/composer.json ]; then
+    echo "📦 Downloading Magento files via Composer...";
+    
+    if [ -z "$VERSION" ]; then
+        echo "🔹 No version specified, installing latest Community Edition..."
+        docker-compose exec php composer create-project --repository-url=https://mirror.mage-os.org/ magento/project-community-edition . --no-install
+    else
+        echo "🔹 Installing version: $VERSION..."
+        docker-compose exec php composer create-project --repository-url=https://mirror.mage-os.org/ magento/project-community-edition:$VERSION . --no-install
+    fi
+    
+    docker-compose exec php composer install
+fi
+
+# Ensure bin/magento is executable
+docker-compose exec -T php chmod +x bin/magento
+
+# Handle Sample Data Deployment if requested
+if [ "$INSTALL_SAMPLE_DATA" == "y" ]; then
+    echo "📊 Deploying Sample Data..."
+    docker-compose exec php bin/magento sampledata:deploy
+fi
+
+echo "🏗️  Ensuring database ${MYSQL_DATABASE} exists...";
+docker-compose exec -T db sh -c "mysql -u root -p\"\$MYSQL_ROOT_PASSWORD\" -e \"CREATE DATABASE IF NOT EXISTS $MYSQL_DATABASE;\""
+
+echo "🏗️  Starting Magento installation...";
+
+EXTRA_OPTS=""
+if [ "$INSTALL_SAMPLE_DATA" == "y" ]; then
+    EXTRA_OPTS="--use-sample-data"
+fi
+
+docker-compose exec php bin/magento setup:install \
+--base-url=${MAGENTO_BASE_URL} \
+--db-host=db \
+--db-name=${MYSQL_DATABASE} \
+--db-user=root \
+--db-password=${MYSQL_ROOT_PASSWORD} \
+--admin-firstname=${MAGENTO_ADMIN_FIRSTNAME} \
+--admin-lastname=${MAGENTO_ADMIN_LASTNAME} \
+--admin-email=${MAGENTO_ADMIN_EMAIL} \
+--admin-user=${MAGENTO_ADMIN_USER} \
+--admin-password=${MAGENTO_ADMIN_PASSWORD} \
+--language=${MAGENTO_LANGUAGE} \
+--currency=${MAGENTO_CURRENCY} \
+--timezone=${MAGENTO_TIMEZONE} \
+--use-rewrites=1 \
+--search-engine=opensearch \
+--opensearch-host=opensearch \
+--opensearch-port=9200 \
+--opensearch-index-prefix=${STORE_PREFIX} \
+--opensearch-timeout=15 \
+$EXTRA_OPTS
+
+echo "🔄 Starting/Reloading Nginx...";
+docker-compose up -d nginx
+
+echo "✅ Everything is ready!! Access your store at ${MAGENTO_BASE_URL}";

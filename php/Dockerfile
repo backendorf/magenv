@@ -1,82 +1,60 @@
 ARG PHP_VERSION
+ARG XDEBUG_VERSION
+FROM php:${PHP_VERSION}
 
-FROM php:$PHP_VERSION
-
+# Install system dependencies and extension installer
 RUN apt-get update && apt-get install -y \
-    unzip wget
+    unzip wget git vim sudo curl gpgv nodejs npm \
+    && curl -sSL https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions -o /usr/local/bin/install-php-extensions \
+    && chmod +x /usr/local/bin/install-php-extensions \
+    && npm install grunt-cli -g \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install PHP extensions (Opted for simplicity over performance)
+RUN install-php-extensions \
+    pdo_mysql \
+    gd \
+    bcmath \
+    intl \
+    zip \
+    sockets \
+    xsl \
+    soap \
+    mysqli \
+    ftp \
+    pcntl \
+    xdebug-${XDEBUG_VERSION}
 
 # Install Composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Install PDO
-RUN docker-php-ext-install pdo pdo_mysql
+# Configure PHP settings
+ARG PHP_MEMORY_LIMIT
+RUN echo "memory_limit = ${PHP_MEMORY_LIMIT}" >> /usr/local/etc/php/php.ini
 
-RUN apt-get update && apt-get install -y \
-        libfreetype6-dev \
-        libjpeg62-turbo-dev \
-        libmcrypt-dev \
-        libpng-dev \
-        vim \
-    && docker-php-ext-install -j$(nproc) iconv bcmath \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) gd
-
-RUN apt-get install -y zlib1g-dev libicu-dev g++ libzip-dev && \
-    docker-php-ext-configure intl && \
-    docker-php-ext-install intl zip sockets && \
-    apt-get purge -y g++
-
-RUN apt-get install -y libxslt-dev
-RUN apt-get install -y git
-RUN apt-get install -y sudo
-RUN docker-php-ext-install xsl soap mysqli
-
-
-
-# Install Redis extension
-RUN pecl install -o -f redis \
-    && rm -rf /tmp/pear \
-    && echo "extension=redis.so" > /usr/local/etc/php/conf.d/docker-php-ext-redis.ini
-
-# Change memory limit
-RUN echo 'memory_limit = 4G ' >> /usr/local/etc/php/php.ini
-
-# Frontend tools
-RUN apt-get update
-RUN apt-get install -y curl gpgv
-RUN apt-get install -y nodejs
-RUN apt-get install -y npm
-RUN npm install grunt-cli -g
-
-#RUN mv /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini.off
-# Install xdebug
-RUN pecl install xdebug-3.3.0 \
-    && docker-php-ext-enable xdebug \
-    && echo "xdebug.client_host=host.docker.internal" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
+# Xdebug configuration
+RUN echo "xdebug.client_host=host.docker.internal" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
     && echo "xdebug.start_with_request=yes" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
     && echo "xdebug.mode=debug" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
-    && echo "xdebug.force_display_errors=1" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+    && echo "xdebug.force_display_errors=1" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
+    && mv /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini.off
 
-# Add aliases for xdebug control
-COPY xon /usr/bin/xon
-COPY xoff /usr/bin/xoff
-COPY install-latest /usr/bin/install-latest
+# Add aliases and helper scripts
+COPY x /usr/bin/x
+RUN chmod +x /usr/bin/x
 
-RUN chmod +x /usr/bin/xon
-RUN chmod +x /usr/bin/xoff
-RUN chmod +x /usr/bin/install-latest
-
-RUN xoff
-
-# Add user and group
+# Create app user and configure environment
 RUN groupadd -g 1000 app && \
-    useradd -g 1000 -u 1000 -d /var/www -s /bin/bash app
-
-RUN chown -R www-data /var/www
-
-ENV PHP_EXTRA_CONFIGURE_ARGS --enable-fpm --with-fpm-user=app --with-fpm-group=app
-RUN echo "app ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/app && \
+    useradd -g 1000 -u 1000 -d /var/www -s /bin/bash app && \
+    mkdir -p /var/www/html /var/www/.history && \
+    chown -R app:app /var/www && \
+    echo "app ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/app && \
     chmod 0440 /etc/sudoers.d/app
+
+# Bash enhancements for developer experience
+RUN echo 'PS1="\[\e[32m\]\u@magento2:\[\e[34m\]\w\[\e[0m\]\$ "' >> /var/www/.bashrc && \
+    echo 'alias ls="ls --color=auto"' >> /var/www/.bashrc && \
+    echo 'alias ll="ls -la"' >> /var/www/.bashrc
 
 USER app
 WORKDIR /var/www/html
