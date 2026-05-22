@@ -1,0 +1,13 @@
+#!/bin/bash
+set -eo pipefail
+
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+else
+    echo "❌ .env file not found!"
+    exit 1
+fi
+
+docker compose exec db mysql -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}"

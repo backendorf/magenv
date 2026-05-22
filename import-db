@@ -22,7 +22,7 @@ fi
 echo "🚀 Importing database into ${MYSQL_DATABASE}...";
 
 # Using the mapped volume path /dumps/import.sql inside the container
-# We use docker-compose exec to run mysql with the password from environment
-docker-compose exec -T db sh -c 'mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" < /dumps/import.sql'
+# We use docker compose exec to run mysql with the password from environment
+docker compose exec -T db sh -c 'mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" < /dumps/import.sql'
 
 echo "✅ Database imported successfully!";
