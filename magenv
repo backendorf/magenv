@@ -1,0 +1,54 @@
+#!/bin/bash
+set -eo pipefail
+
+COMMAND=$1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/bin"
+
+usage() {
+    echo ""
+    echo "        /\\"
+    echo "       /  \\"
+    echo "      / /\ \\"
+    echo "     /_/  \_\\"
+    echo "      |    |"
+    echo "      | /\ |"
+    echo "      |(  )|"
+    echo "      | \/ |"
+    echo "      |    |"
+    echo "      '----'"
+    echo "        ||"
+    echo "      [====] <- docker"
+    echo ""
+    echo "  M A G E N V"
+    echo "  The simplest Magento 2 environment"
+    echo ""
+    echo "Usage: ./magenv <command>"
+    echo ""
+    echo "  install     Full Magento installation"
+    echo "  up          Start containers"
+    echo "  stop        Stop containers"
+    echo "  down        Remove containers"
+    echo "  php         Open a shell in the PHP container"
+    echo "  db          Open MySQL CLI"
+    echo "  import-db   Import dumps/import.sql into the database"
+    echo ""
+}
+
+case "$COMMAND" in
+    install)   "$SCRIPT_DIR/install" ;;
+    up)        "$SCRIPT_DIR/up" ;;
+    stop)      "$SCRIPT_DIR/stop" ;;
+    down)      "$SCRIPT_DIR/down" ;;
+    php)       "$SCRIPT_DIR/shell-php" ;;
+    db)        "$SCRIPT_DIR/shell-db" ;;
+    import-db) "$SCRIPT_DIR/import-db" ;;
+    *)
+        if [ -z "$COMMAND" ]; then
+            usage
+        else
+            echo "❌ Unknown command: '$COMMAND'"
+            usage
+            exit 1
+        fi
+        ;;
+esac

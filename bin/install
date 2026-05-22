@@ -19,10 +19,8 @@ load_env() {
 
 load_env
 
-# ── 1. Check if Magento is already installed ──────────────────────────────────
-IS_INSTALLED=$(docker compose exec -T php [ -f /var/www/html/app/etc/env.php ] && echo "yes" || echo "no" | tr -d '\r')
-
-if [ "$IS_INSTALLED" == "yes" ]; then
+# ── 1. Check if Magento is already installed (no container needed) ────────────
+if [ -f html/app/etc/env.php ]; then
     echo "⚠️  Magento is already installed in this environment!"
     read -p "Do you want to reinstall it from scratch? (y/n): " REINSTALL
     if [ "$REINSTALL" != "y" ]; then
@@ -30,7 +28,7 @@ if [ "$IS_INSTALLED" == "yes" ]; then
         exit 0
     fi
     echo "🧹 Clearing current installation for a fresh start..."
-    docker compose exec -T php find /var/www/html -mindepth 1 -delete
+    rm -rf html/*  html/.[!.]* 2>/dev/null || true
 fi
 
 # ── 2. Override Store Prefix ──────────────────────────────────────────────────
@@ -40,11 +38,7 @@ if [ ! -z "$INPUT_PREFIX" ]; then
     echo "📝 Updating .env with new STORE_PREFIX: $STORE_PREFIX"
     sed -i "s/^STORE_PREFIX=.*/STORE_PREFIX=$STORE_PREFIX/" .env
     load_env
-    echo "🔄 Refreshing containers for new prefix..."
-    docker compose up -d --remove-orphans
 fi
-
-echo "🚀 Initializing Magento environment in ${STORE_PREFIX}"
 
 # ── 3. Ask for distribution ───────────────────────────────────────────────────
 echo ""
@@ -74,18 +68,18 @@ echo ""
 echo "Which theme do you want to use?"
 echo "  1) Luma (default Magento theme)"
 echo "  2) Hyvä"
-read -p "Choose [1 or 2, default: 1]: " THEME_CHOICE
-THEME_CHOICE=${THEME_CHOICE:-1}
+read -p "Choose [1 or 2, default: 2]: " THEME_CHOICE
+THEME_CHOICE=${THEME_CHOICE:-2}
 
 if [ "$THEME_CHOICE" == "2" ]; then
     echo ""
-    echo "🎨 Hyvä selected! Please provide your Hyvä Packagist credentials."
-    echo "   (from hyva-themes.repo.packagist.com)"
-    read -p "Username: " HYVA_USERNAME
-    read -p "Password: " HYVA_PASSWORD
+    echo "🎨 Hyvä selected! Please provide your Hyvä repository URL."
+    echo "   Find it at: https://hyva-themes.repo.packagist.com (e.g. https://hyva-themes.repo.packagist.com/your-project/)"
+    read -p "Repository URL: " HYVA_REPO_URL
+    read -p "Token (license key): " HYVA_TOKEN
 
-    if [ -z "$HYVA_USERNAME" ] || [ -z "$HYVA_PASSWORD" ]; then
-        echo "❌ Username and password are required for Hyvä. Aborting."
+    if [ -z "$HYVA_REPO_URL" ] || [ -z "$HYVA_TOKEN" ]; then
+        echo "❌ Repository URL and token are required for Hyvä. Aborting."
         exit 1
     fi
 fi
@@ -94,11 +88,16 @@ fi
 read -p "Install sample data? (y/n) [default: n]: " INSTALL_SAMPLE_DATA
 INSTALL_SAMPLE_DATA=${INSTALL_SAMPLE_DATA:-n}
 
-# ── 7. Ensure directory permissions ──────────────────────────────────────────
+# ── 7. Start containers ───────────────────────────────────────────────────────
+echo ""
+echo "🐳 Starting containers..."
+docker compose up -d --remove-orphans
+
+# ── 8. Ensure directory permissions ──────────────────────────────────────────
 echo "🔐 Checking directory permissions..."
 docker compose exec -T php sudo chown -R app:app /var/www/html
 
-# ── 8. Handle partial installs ────────────────────────────────────────────────
+# ── 9. Handle partial installs ────────────────────────────────────────────────
 IS_EMPTY=$(docker compose exec -T php ls -A /var/www/html | tr -d '\r')
 
 if [ ! -z "$IS_EMPTY" ]; then
@@ -121,7 +120,7 @@ if [ ! -z "$IS_EMPTY" ]; then
     fi
 fi
 
-# ── 9. Download Magento via Composer ──────────────────────────────────────────
+# ── 10. Download Magento via Composer ─────────────────────────────────────────
 if ! docker compose exec -T php [ -f /var/www/html/composer.json ]; then
     echo "📦 Downloading Magento files via Composer..."
 
@@ -139,27 +138,40 @@ fi
 # Ensure bin/magento is executable
 docker compose exec -T php chmod +x bin/magento
 
-# ── 10. Install Hyvä if selected ──────────────────────────────────────────────
+# ── 11. Install Hyvä if selected ──────────────────────────────────────────────
 if [ "$THEME_CHOICE" == "2" ]; then
     echo "🎨 Configuring Hyvä Packagist repository..."
-    docker compose exec php composer config --auth http-basic.hyva-themes.repo.packagist.com "$HYVA_USERNAME" "$HYVA_PASSWORD"
-    docker compose exec php composer config repositories.hyva-themes composer https://hyva-themes.repo.packagist.com
+    docker compose exec php composer config --auth http-basic.hyva-themes.repo.packagist.com token "$HYVA_TOKEN"
+    docker compose exec php composer config repositories.hyva-themes composer "$HYVA_REPO_URL"
 
     echo "🎨 Installing Hyvä theme..."
     docker compose exec php composer require hyva-themes/magento2-default-theme
+
+    echo "🎨 Enabling Hyvä modules and setting theme..."
+    docker compose exec php bin/magento setup:upgrade
+
+    HYVA_THEME_ID=$(docker compose exec -T db sh -c \
+        "mysql -u root -p\"\$MYSQL_ROOT_PASSWORD\" \"\$MYSQL_DATABASE\" -sN -e \"SELECT theme_id FROM theme WHERE theme_path='Hyva/default' LIMIT 1;\"")
+
+    if [ ! -z "$HYVA_THEME_ID" ]; then
+        docker compose exec php bin/magento config:set design/theme/theme_id "$HYVA_THEME_ID"
+        echo "✅ Hyvä theme set (ID: $HYVA_THEME_ID)"
+    else
+        echo "⚠️  Could not find Hyvä theme ID. Set it manually in Admin > Content > Design > Configuration."
+    fi
 fi
 
-# ── 11. Deploy sample data if requested ───────────────────────────────────────
+# ── 12. Deploy sample data if requested ───────────────────────────────────────
 if [ "$INSTALL_SAMPLE_DATA" == "y" ]; then
     echo "📊 Deploying Sample Data..."
     docker compose exec php bin/magento sampledata:deploy
 fi
 
-# ── 12. Ensure database exists ────────────────────────────────────────────────
+# ── 13. Ensure database exists ────────────────────────────────────────────────
 echo "🏗️  Ensuring database ${MYSQL_DATABASE} exists..."
 docker compose exec -T db sh -c "mysql -u root -p\"\$MYSQL_ROOT_PASSWORD\" -e \"CREATE DATABASE IF NOT EXISTS $MYSQL_DATABASE;\""
 
-# ── 13. Run Magento setup:install ─────────────────────────────────────────────
+# ── 14. Run Magento setup:install ─────────────────────────────────────────────
 echo "🏗️  Starting Magento installation..."
 
 EXTRA_OPTS=""
@@ -190,11 +202,15 @@ docker compose exec php bin/magento setup:install \
 --backend-frontname=${MAGENTO_ADMIN_FRONTNAME} \
 $EXTRA_OPTS
 
-# ── 14. Reload Nginx ──────────────────────────────────────────────────────────
+# ── 15. Disable 2FA (dev environment) ────────────────────────────────────────
+echo "🔓 Disabling Two-Factor Authentication..."
+docker compose exec php bin/magento module:disable Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth
+
+# ── 16. Reload Nginx ──────────────────────────────────────────────────────────
 echo "🔄 Starting/Reloading Nginx..."
 docker compose up -d nginx
 
-# ── 15. Summary ───────────────────────────────────────────────────────────────
+# ── 16. Summary ───────────────────────────────────────────────────────────────
 echo ""
 echo "✅ Everything is ready!!"
 echo ""
