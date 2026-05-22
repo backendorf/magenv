@@ -43,7 +43,7 @@ Everything else is automatic.
 |---|---|
 | Store | `http://<STORE_PREFIX>.localhost/` |
 | Admin | `http://<STORE_PREFIX>.localhost/admin` |
-| Mailpit | `http://localhost:8025` |
+| Mailpit | `http://mailpit.localhost` |
 
 Credentials are defined in `.env`.
 
