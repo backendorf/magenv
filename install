@@ -54,8 +54,49 @@ if [ "$IS_INSTALLED" == "yes" ]; then
     docker-compose exec -T php find /var/www/html -mindepth 1 -delete
 fi
 
+# Ask for distribution
+echo ""
+echo "Which distribution do you want to install?"
+echo "  1) Magento (official Adobe repository)"
+echo "  2) Mage-OS (community fork)"
+read -p "Choose [1 or 2, default: 1]: " DISTRO_CHOICE
+DISTRO_CHOICE=${DISTRO_CHOICE:-1}
+
+if [ "$DISTRO_CHOICE" == "2" ]; then
+    COMPOSER_REPO="https://mirror.mage-os.org/"
+    COMPOSER_PACKAGE="magento/project-community-edition"
+    DISTRO_LABEL="Mage-OS"
+else
+    COMPOSER_REPO="https://repo.magento.com/"
+    COMPOSER_PACKAGE="magento/project-community-edition"
+    DISTRO_LABEL="Magento (official)"
+fi
+
+echo "📦 Distribution selected: $DISTRO_LABEL"
+
 # Ask for version
 read -p "Enter Magento version (leave empty for latest): " VERSION
+
+# Ask for theme
+echo ""
+echo "Which theme do you want to use?"
+echo "  1) Luma (default Magento theme)"
+echo "  2) Hyvä"
+read -p "Choose [1 or 2, default: 1]: " THEME_CHOICE
+THEME_CHOICE=${THEME_CHOICE:-1}
+
+if [ "$THEME_CHOICE" == "2" ]; then
+    echo ""
+    echo "🎨 Hyvä selected! Please provide your Hyvä Packagist credentials."
+    echo "   (from hyva-themes.repo.packagist.com)"
+    read -p "Username: " HYVA_USERNAME
+    read -p "Password: " HYVA_PASSWORD
+
+    if [ -z "$HYVA_USERNAME" ] || [ -z "$HYVA_PASSWORD" ]; then
+        echo "❌ Username and password are required for Hyvä. Aborting."
+        exit 1
+    fi
+fi
 
 # Ask for sample data
 read -p "Install sample data? (y/n) [default: n]: " INSTALL_SAMPLE_DATA
@@ -90,11 +131,11 @@ if ! docker-compose exec -T php [ -f /var/www/html/composer.json ]; then
     echo "📦 Downloading Magento files via Composer...";
     
     if [ -z "$VERSION" ]; then
-        echo "🔹 No version specified, installing latest Community Edition..."
-        docker-compose exec php composer create-project --repository-url=https://mirror.mage-os.org/ magento/project-community-edition . --no-install
+        echo "🔹 No version specified, installing latest from $DISTRO_LABEL..."
+        docker-compose exec php composer create-project --repository-url=$COMPOSER_REPO $COMPOSER_PACKAGE . --no-install
     else
-        echo "🔹 Installing version: $VERSION..."
-        docker-compose exec php composer create-project --repository-url=https://mirror.mage-os.org/ magento/project-community-edition:$VERSION . --no-install
+        echo "🔹 Installing version $VERSION from $DISTRO_LABEL..."
+        docker-compose exec php composer create-project --repository-url=$COMPOSER_REPO $COMPOSER_PACKAGE:$VERSION . --no-install
     fi
     
     docker-compose exec php composer install
@@ -102,6 +143,16 @@ fi
 
 # Ensure bin/magento is executable
 docker-compose exec -T php chmod +x bin/magento
+
+# Install Hyvä if selected
+if [ "$THEME_CHOICE" == "2" ]; then
+    echo "🎨 Configuring Hyvä Packagist repository..."
+    docker-compose exec php composer config --auth http-basic.hyva-themes.repo.packagist.com "$HYVA_USERNAME" "$HYVA_PASSWORD"
+    docker-compose exec php composer config repositories.hyva-themes composer https://hyva-themes.repo.packagist.com
+
+    echo "🎨 Installing Hyvä theme..."
+    docker-compose exec php composer require hyva-themes/magento2-default-theme
+fi
 
 # Handle Sample Data Deployment if requested
 if [ "$INSTALL_SAMPLE_DATA" == "y" ]; then
@@ -144,4 +195,11 @@ $EXTRA_OPTS
 echo "🔄 Starting/Reloading Nginx...";
 docker-compose up -d nginx
 
-echo "✅ Everything is ready!! Access your store at ${MAGENTO_BASE_URL}";
+echo ""
+echo "✅ Everything is ready!! Access your store at ${MAGENTO_BASE_URL}"
+echo ""
+echo "🛒 Store URL:   ${MAGENTO_BASE_URL}"
+echo "🔧 Admin URL:   ${MAGENTO_BASE_URL}${MAGENTO_ADMIN_FRONTNAME:-admin}"
+echo "👤 Admin user:  ${MAGENTO_ADMIN_USER}"
+echo "🔑 Admin pass:  ${MAGENTO_ADMIN_PASSWORD}"
+echo ""
