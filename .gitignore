@@ -1,5 +1,3 @@
 html/
-elastic/esdata
-mysql/data
-dumps/
-mailpit/
+volumes/dumps/
+.history/

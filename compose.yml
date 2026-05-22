@@ -1,12 +1,12 @@
 services:
   nginx:
     container_name: ${STORE_PREFIX}_nginx
-    image: nginx
+    image: nginx:alpine
     ports:
       - "80:80"
     volumes:
       - ./html:/var/www/html
-      - ./nginx.default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx.default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       db:
         condition: service_healthy
@@ -18,7 +18,7 @@ services:
   php:
     container_name: ${STORE_PREFIX}_php
     build:
-      context: ./php
+      context: ./docker/php
       args:
         PHP_VERSION: ${PHP_VERSION}
         PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT}
@@ -46,9 +46,8 @@ services:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
       - MYSQL_DATABASE=${MYSQL_DATABASE}
     volumes:
-      - ./mysql/data:/var/lib/mysql
-      - ./mysql/docker:/docker
-      - ./dumps/:/dumps
+      - db_data:/var/lib/mysql
+      - ./volumes/dumps:/dumps
     command: --max_allowed_packet=32505856
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
@@ -63,16 +62,24 @@ services:
     ports:
       - "9200:9200"
     volumes:
-      - ./opensearch:/var/lib/opensearch/data
+      - opensearch_data:/var/lib/opensearch/data
     environment:
       - discovery.type=single-node
-      - "DISABLE_SECURITY_PLUGIN=true"
+      - DISABLE_SECURITY_PLUGIN=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
 
   mailpit:
     image: axllent/mailpit
     container_name: ${STORE_PREFIX}_mailpit
     volumes:
-      - ./mailpit:/data
+      - mailpit_data:/data
     ports:
       - 8025:8025
       - 1025:1025
@@ -81,6 +88,14 @@ services:
       MP_DATABASE: /data/mailpit.db
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+volumes:
+  db_data:
+    name: ${STORE_PREFIX}_db_data
+  opensearch_data:
+    name: ${STORE_PREFIX}_opensearch_data
+  mailpit_data:
+    name: ${STORE_PREFIX}_mailpit_data
 
 networks:
   default:

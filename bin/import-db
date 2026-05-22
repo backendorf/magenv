@@ -11,7 +11,7 @@ else
     exit 1
 fi
 
-IMPORT_FILE="dumps/import.sql"
+IMPORT_FILE="volumes/dumps/import.sql"
 
 if [ ! -f "$IMPORT_FILE" ]; then
     echo "❌ Import file not found: $IMPORT_FILE"
