@@ -12,7 +12,8 @@ The simplest Magento 2 local environment. One command to install, zero configura
 - Composer, Node.js, npm, Grunt, Git — all inside the PHP container
 - PHP version configurable via `.env`
 - Xdebug off by default, toggle with `x` inside the container
-- Email capture at `http://localhost:8025`
+- 2FA disabled by default (dev environment)
+- Email capture at `http://mailpit.localhost`
 
 ---
 
@@ -21,17 +22,17 @@ The simplest Magento 2 local environment. One command to install, zero configura
 ```bash
 git clone https://github.com/your-org/magenv my-store
 cd my-store
-docker compose up -d
-./bin/install
+./magenv install
 ```
 
 The install script will ask:
-- Magento official or Mage-OS
+- Store prefix
+- Distribution: Magento official or Mage-OS
 - Version (or latest)
-- Luma or Hyvä theme
+- Theme: **Hyvä** (default) or Luma
 - Sample data
 
-Everything else is automatic.
+Everything else is automatic. Containers are started for you.
 
 > No `/etc/hosts` needed — `.localhost` resolves to `127.0.0.1` automatically.
 
@@ -51,28 +52,32 @@ Credentials are defined in `.env`.
 
 ## Commands
 
-| Script | What it does |
-|---|---|
-| `./bin/install` | Full Magento installation |
-| `./bin/stop` | Stop containers |
-| `./bin/down` | Remove containers |
-| `./bin/shell-php` | Shell into the PHP container |
-| `./bin/shell-db` | MySQL CLI |
-| `./bin/import-db` | Import `dumps/import.sql` |
+Use `./magenv <command>` from the project root:
 
-### Running Magento CLI
+| Command | What it does |
+|---|---|
+| `./magenv install` | Full Magento installation |
+| `./magenv up` | Start containers |
+| `./magenv stop` | Stop containers (data preserved) |
+| `./magenv down` | Remove containers (volumes preserved) |
+| `./magenv php` | Shell into the PHP container |
+| `./magenv db` | MySQL CLI |
+| `./magenv import-db` | Import `dumps/import.sql` into the database |
+
+### Magento CLI
 
 ```bash
-./bin/shell-php
+./magenv php
 bin/magento cache:flush
+bin/magento setup:upgrade
 ```
 
-### Importing a database
+### Database import
 
 Place your dump at `dumps/import.sql` and run:
 
 ```bash
-./bin/import-db
+./magenv import-db
 ```
 
 ---
@@ -82,9 +87,24 @@ Place your dump at `dumps/import.sql` and run:
 All settings live in `.env`:
 
 ```env
+# Project
 STORE_PREFIX=mystore
+MAGENTO_BASE_URL=http://${STORE_PREFIX}.localhost/
+
+# PHP
 PHP_VERSION=8.3-fpm
+PHP_MEMORY_LIMIT=4G
+
+# Database
 MYSQL_ROOT_PASSWORD=root
+MYSQL_DATABASE=${STORE_PREFIX}_db
+
+# Admin
 MAGENTO_ADMIN_USER=admin
 MAGENTO_ADMIN_PASSWORD=admin123
+MAGENTO_ADMIN_FRONTNAME=admin
 ```
+
+---
+
+<sub>Made with 🇧🇷 in Brazil.</sub>
