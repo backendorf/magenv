@@ -32,11 +32,14 @@ RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local
 ARG PHP_MEMORY_LIMIT
 RUN echo "memory_limit = ${PHP_MEMORY_LIMIT}" >> /usr/local/etc/php/php.ini
 
-# Xdebug configuration (disabled by default, enable with: mv ...xdebug.ini.off ...xdebug.ini)
+# Xdebug configuration. Disabled by default; the x helper toggles xdebug.mode between debug and off.
 RUN echo "xdebug.client_host=host.docker.internal" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
     && echo "xdebug.mode=off" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
-    && echo "xdebug.start_with_request=trigger" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
+    && echo "xdebug.start_with_request=yes" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini \
     && echo "xdebug.force_display_errors=1" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+
+# Disabled by default
+RUN mv /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini.off
 
 # Add aliases and helper scripts
 COPY x /usr/bin/x
@@ -54,6 +57,3 @@ RUN groupadd -g 1000 app && \
 RUN echo 'PS1="\[\e[32m\]\u@magento2:\[\e[34m\]\w\[\e[0m\]\$ "' >> /var/www/.bashrc && \
     echo 'alias ls="ls --color=auto"' >> /var/www/.bashrc && \
     echo 'alias ll="ls -la"' >> /var/www/.bashrc
-
-USER app
-WORKDIR /var/www/html
