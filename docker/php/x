@@ -1,16 +1,18 @@
 #!/bin/bash
 set -e
-FILE_OFF=/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini.off
-FILE_ON=/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+
+FILE_OFF="/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini.off"
+FILE_ON="/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini"
 
 if test -f "$FILE_ON"; then
-    sudo mv $FILE_ON $FILE_OFF && kill -USR2 1
+    sudo mv "$FILE_ON" "$FILE_OFF" && kill -USR2 1
     echo -e "XDEBUG \e[91mdisabled! \e[39m"
 else
     if test -f "$FILE_OFF"; then
-        sudo mv $FILE_OFF $FILE_ON && kill -USR2 1
+        sudo mv "$FILE_OFF" "$FILE_ON" && kill -USR2 1
         echo -e "XDEBUG \e[32menabled! \e[39m"
     else
         echo -e "XDEBUG \e[93mconfiguration file not found! \e[39m"
+        exit 1
     fi
 fi
