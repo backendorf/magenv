@@ -1,3 +1,6 @@
 html/
 dumps/
 .history/
+mysql/
+dashboard/config.js
+mailpit/

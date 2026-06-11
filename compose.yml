@@ -6,7 +6,13 @@ services:
       - "80:80"
     volumes:
       - ./html:/var/www/html
-      - ./docker/nginx.default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx.default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./dashboard:/var/www/dashboard:ro
+    environment:
+      - STORE_PREFIX=${STORE_PREFIX}
+      - NGINX_ENVSUBST_TEMPLATE_SUFFIX=.template
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d
+      - NGINX_ENVSUBST_FILTER=STORE_PREFIX
     depends_on:
       db:
         condition: service_healthy

@@ -1,4 +1,36 @@
 #!/bin/bash
 set -eo pipefail
 
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ── load .env ─────────────────────────────────────────────────────────────────
+source "$DIR/.env"
+
+PHP_VERSION_CLEAN="${PHP_VERSION%%-fpm}"
+
+# ── generate dashboard/config.js ──────────────────────────────────────────────
+cat > "$DIR/dashboard/config.js" <<EOF
+const STORE_PREFIX     = "${STORE_PREFIX}";
+const PHP_VERSION      = "${PHP_VERSION_CLEAN}";
+const MYSQL_VERSION    = "latest (debian)";
+const PHP_MEMORY_LIMIT = "${PHP_MEMORY_LIMIT}";
+const XDEBUG_VERSION   = "${XDEBUG_VERSION}";
+const MAGENTO_BASE_URL = "http://${STORE_PREFIX}.localhost/";
+const ADMIN_USER       = "${MAGENTO_ADMIN_USER}";
+const ADMIN_PASSWORD   = "${MAGENTO_ADMIN_PASSWORD}";
+const ADMIN_FRONTNAME  = "${MAGENTO_ADMIN_FRONTNAME}";
+const MYSQL_DATABASE   = "${MYSQL_DATABASE}";
+const MYSQL_USER       = "${MYSQL_USER}";
+const MYSQL_PASSWORD   = "${MYSQL_PASSWORD}";
+EOF
+
 docker compose up -d
+
+attempt=0
+until curl -sf -o /dev/null http://magenv.localhost; do
+  attempt=$((attempt + 1))
+  [ "$attempt" -ge 30 ] && exit 1
+  sleep 2
+done
+
+xdg-open http://magenv.localhost

@@ -1,0 +1,42 @@
+upstream fastcgi_backend {
+   server php:9000;
+}
+
+server {
+    listen 80 default_server;
+    server_name localhost magenv.localhost dashboard.localhost;
+
+    root /var/www/dashboard;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+
+server {
+     listen 80;
+     server_name ${STORE_PREFIX}.localhost;
+
+     set $MAGE_ROOT /var/www/html;
+     set $MAGE_MODE developer;
+
+     set $MAGE_RUN_CODE base;
+     set $MAGE_RUN_TYPE website;
+
+     include /var/www/html/nginx.conf.sample;
+}
+
+server {
+    listen 80;
+    server_name mailpit.localhost;
+
+    location / {
+        proxy_pass http://mailpit:8025;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
